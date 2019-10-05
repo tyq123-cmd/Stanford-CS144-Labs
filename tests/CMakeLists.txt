@@ -6,6 +6,7 @@ macro (add_test_exec exec_name)
     target_link_libraries ("${exec_name}" sponge ${ARGN})
 endmacro (add_test_exec)
 
+add_test_exec (fsm_stream_reassembler_cap)
 add_test_exec (fsm_stream_reassembler_single)
 add_test_exec (fsm_stream_reassembler_seq)
 add_test_exec (fsm_stream_reassembler_dup)
