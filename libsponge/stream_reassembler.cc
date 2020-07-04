@@ -12,15 +12,43 @@ void DUMMY_CODE(Targs &&... /* unused */) {}
 
 using namespace std;
 
-StreamReassembler::StreamReassembler(const size_t capacity) : _output(capacity), _capacity(capacity) {}
+StreamReassembler::StreamReassembler(const size_t capacity)
+    : _output(capacity), _capacity(capacity), unassembled_data(_capacity), exist_data(_capacity) {}
 
 //! \details This function accepts a substring (aka a segment) of bytes,
 //! possibly out-of-order, from the logical stream, and assembles any newly
 //! contiguous substrings and writes them into the output stream in order.
 void StreamReassembler::push_substring(const string &data, const size_t index, const bool eof) {
-    DUMMY_CODE(data, index, eof);
+    if (eof) {
+        end_index = index + data.size();
+        eof_set = true;
+    }
+    if (cur_max_index > index + data.size())
+        return;
+    size_t offset = max(index, cur_max_index) - index;
+    for (size_t i = offset; i < data.size() && i + index < _capacity; ++i) {
+        unassembled_data[i + index] = data[i];
+        if (!exist_data[i + index]) {
+            exist_data[i + index] = true;
+            unassembled_size++;
+        }
+    }
+    assemble_data();
 }
 
-size_t StreamReassembler::unassembled_bytes() const { return {}; }
+size_t StreamReassembler::unassembled_bytes() const { return unassembled_size; }
 
-bool StreamReassembler::empty() const { return {}; }
+bool StreamReassembler::empty() const { return unassembled_size == 0; }
+
+void StreamReassembler::assemble_data() {
+    string data_to_assemble = "";
+    while (cur_max_index < _capacity && exist_data[cur_max_index]) {
+        exist_data[cur_max_index] = false;
+        data_to_assemble += unassembled_data[cur_max_index++];
+        unassembled_size--;
+    }
+    _output.write(data_to_assemble);
+    if (eof_set && cur_max_index == end_index) {
+        _output.end_input();
+    }
+}
