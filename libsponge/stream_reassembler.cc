@@ -26,10 +26,10 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
     if (cur_max_index > index + data.size())
         return;
     size_t offset = max(index, cur_max_index) - index;
-    for (size_t i = offset; i < data.size() && i + index < _capacity; ++i) {
-        unassembled_data[i + index] = data[i];
-        if (!exist_data[i + index]) {
-            exist_data[i + index] = true;
+    for (size_t i = offset; i < data.size(); ++i) {
+        unassembled_data[(i + index) % _capacity] = data[i];
+        if (!exist_data[(i + index) % _capacity]) {
+            exist_data[(i + index) % _capacity] = true;
             unassembled_size++;
         }
     }
@@ -42,13 +42,14 @@ bool StreamReassembler::empty() const { return unassembled_size == 0; }
 
 void StreamReassembler::assemble_data() {
     string data_to_assemble = "";
-    while (cur_max_index < _capacity && exist_data[cur_max_index]) {
-        exist_data[cur_max_index] = false;
-        data_to_assemble += unassembled_data[cur_max_index++];
+    while (exist_data[cur_max_index % _capacity]) {
+        exist_data[cur_max_index % _capacity] = false;
+        data_to_assemble += unassembled_data[cur_max_index++ % _capacity];
         unassembled_size--;
     }
     _output.write(data_to_assemble);
     if (eof_set && cur_max_index == end_index) {
         _output.end_input();
     }
+
 }
