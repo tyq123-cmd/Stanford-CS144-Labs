@@ -51,5 +51,4 @@ void StreamReassembler::assemble_data() {
     if (eof_set && cur_max_index == end_index) {
         _output.end_input();
     }
-
 }
