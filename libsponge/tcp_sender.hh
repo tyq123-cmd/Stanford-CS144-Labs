@@ -4,12 +4,12 @@
 #include "byte_stream.hh"
 #include "tcp_config.hh"
 #include "tcp_segment.hh"
-#include "wrapping_integers.hh"
 #include "timer.hh"
+#include "wrapping_integers.hh"
 
 #include <functional>
-#include <queue>
 #include <map>
+#include <queue>
 
 //! \brief The "sender" part of a TCP implementation.
 
@@ -33,9 +33,8 @@ class TCPSender {
 
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
-    // uint64_t _checkpoint;
     uint64_t _abs_ackno;
-    
+
     Timer _timer;
 
     size_t _current_time;
