@@ -5,9 +5,11 @@
 #include "tcp_config.hh"
 #include "tcp_segment.hh"
 #include "wrapping_integers.hh"
+#include "timer.hh"
 
 #include <functional>
 #include <queue>
+#include <map>
 
 //! \brief The "sender" part of a TCP implementation.
 
@@ -31,6 +33,19 @@ class TCPSender {
 
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
+    // uint64_t _checkpoint;
+    uint64_t _abs_ackno;
+    
+    Timer _timer;
+
+    size_t _current_time;
+    uint16_t _window_size;
+    size_t _consecutive_retrans;
+    unsigned int _retransmission_timeout;
+    size_t _syn_num = 0;
+    bool _ack_received = false;
+    bool _fin = false;
+    std::map<uint64_t, TCPSegment> _unacked_segments;
 
   public:
     //! Initialize a TCPSender
@@ -70,6 +85,8 @@ class TCPSender {
 
     //! \brief Number of consecutive retransmissions that have occurred in a row
     unsigned int consecutive_retransmissions() const;
+
+    void retrainsmit(uint64_t abs_seqno);
 
     //! \brief TCPSegments that the TCPSender has enqueued for transmission.
     //! \note These must be dequeued and sent by the TCPConnection,
