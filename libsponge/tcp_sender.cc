@@ -36,26 +36,25 @@ void TCPSender::fill_window() {
     do {
         size_t len_to_read =
             min(min(TCPConfig::MAX_PAYLOAD_SIZE, _stream.buffer_size()), static_cast<size_t>(_window_size));
-        if (!len_to_read && _syn_num == 2)
-            return;
         TCPSegment tcp_segment;
         auto &payload = tcp_segment.payload();
         payload = Buffer(_stream.read(len_to_read));
         auto &header = tcp_segment.header();
         header.syn = !_next_seqno;
         _syn_num += !_next_seqno;
+        // fin occupies sequence space, so check whether it fits in
         if (!_fin && (tcp_segment.length_in_sequence_space() + _stream.input_ended()) <= _window_size) {
             header.fin = _stream.input_ended();
             _fin = _stream.input_ended();
         }
+        // zero window probing only when the window size information is from ack_received
         if (!tcp_segment.length_in_sequence_space() && !_ack_received)
             return;
         header.seqno = wrap(_next_seqno, _isn);
         _next_seqno += tcp_segment.length_in_sequence_space();
         _window_size -= len_to_read;
         _segments_out.push(tcp_segment);
-        // record the largest seqno in the segment
-
+        // record the seqno next to the largest seqno in the segment
         _unacked_segments.insert({_next_seqno, tcp_segment});
 
         if (!_timer.is_turn_on()) {
@@ -66,7 +65,10 @@ void TCPSender::fill_window() {
             break;
         }
         _ack_received = false;
-    } while ((!_next_seqno || _stream.buffer_size() || (_window_size == 0 && _ack_received)));
+    } while ((!_next_seqno                             // no segment sent yet, so need to send syn
+              || _stream.buffer_size()                 // there is data to be sent
+              || (_window_size == 0 && _ack_received)  // zero window probing
+              ));
 }
 
 //! \param ackno The remote receiver's ackno (acknowledgment number)
@@ -74,10 +76,13 @@ void TCPSender::fill_window() {
 //! \returns `false` if the ackno appears invalid (acknowledges something the TCPSender hasn't sent yet)
 bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) {
     auto abs_ackno = unwrap(ackno, _isn, _abs_ackno);
+    // invalid ackno
     if (abs_ackno > _next_seqno)
         return false;
+    // has been acked
     if (abs_ackno < _abs_ackno)
         return true;
+    // zero window probing
     if (window_size == 0)
         _ack_received = true;
     _consecutive_retrans = 0;
