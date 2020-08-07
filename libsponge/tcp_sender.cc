@@ -106,6 +106,8 @@ bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     _timer.set_timeout(_retransmission_timeout);
     _abs_ackno = abs_ackno;
     _window_size = window_size;
+    // TODO: actually we do not need to use a map to _unacked_segments.
+    // Should be able to only keep a variable or something.
     for (auto it = _unacked_segments.begin(); it != _unacked_segments.end();) {
         if (it->first <= abs_ackno) {
             it = _unacked_segments.erase(it);

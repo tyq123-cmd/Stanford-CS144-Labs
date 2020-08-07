@@ -26,6 +26,7 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
     if (cur_max_index > index + data.size())
         return;
     size_t offset = max(index, cur_max_index) - index;
+    // TODO: the mod operation can be optimized out, with begin/end index
     for (size_t i = offset; i < data.size(); ++i) {
         // make sure not to overwrite the previous data
         if (exist_data[(i + index) % _capacity] && unassembled_data[(i + index) % _capacity] != data[i])
