@@ -22,37 +22,46 @@ TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const s
     : _isn(fixed_isn.value_or(WrappingInt32{random_device()()}))
     , _initial_retransmission_timeout{retx_timeout}
     , _stream(capacity)
-    , _abs_ackno(0)
     , _timer()
-    , _current_time(0)
-    , _window_size(1)
-    , _consecutive_retrans(0)
     , _retransmission_timeout(retx_timeout)
     , _unacked_segments() {}
 
-uint64_t TCPSender::bytes_in_flight() const { return _next_seqno - _abs_ackno; }
+uint64_t TCPSender::bytes_in_flight() const { return max(_next_seqno - _abs_ackno, 0ul); }
 
 void TCPSender::fill_window() {
-    do {
-        size_t len_to_read =
-            min(min(TCPConfig::MAX_PAYLOAD_SIZE, _stream.buffer_size()), static_cast<size_t>(_window_size));
+    if (!_is_syn_sent) {
         TCPSegment tcp_segment;
-        auto &payload = tcp_segment.payload();
-        payload = Buffer(_stream.read(len_to_read));
-        auto &header = tcp_segment.header();
-        header.syn = !_next_seqno;
-        _syn_num += !_next_seqno;
-        // fin occupies sequence space, so check whether it fits in
-        if (!_fin && (tcp_segment.length_in_sequence_space() + _stream.input_ended()) <= _window_size) {
-            header.fin = _stream.input_ended();
-            _fin = _stream.input_ended();
+        tcp_segment.header().seqno = next_seqno();
+        tcp_segment.header().syn = true;
+        _segments_out.push(tcp_segment);
+        _next_seqno++;
+        _unacked_segments.insert({_next_seqno, tcp_segment});
+        _is_syn_sent = true;
+        if (!_timer.is_turn_on()) {
+            _timer.turn_on(_retransmission_timeout);
+            _timer.set_last_expire_time(_current_time);
         }
-        // zero window probing only when the window size information is from ack_received
-        if (!tcp_segment.length_in_sequence_space() && !_ack_received)
-            return;
-        header.seqno = wrap(_next_seqno, _isn);
+    }
+
+    while (_stream.buffer_size()                                    // there is data to be sent
+           && (bytes_in_flight() < _window_size || !_window_size))  // zero window probing
+    {
+        size_t len_to_read =
+            min(TCPConfig::MAX_PAYLOAD_SIZE,
+                min(_stream.buffer_size(),
+                    max(static_cast<size_t>(1), static_cast<size_t>(_window_size)) - bytes_in_flight()));
+        if (!len_to_read)
+            break;
+        TCPSegment tcp_segment;
+        tcp_segment.payload() = Buffer(_stream.read(len_to_read));
+        auto &header = tcp_segment.header();
+        // fin occupies sequence space, so check whether it fits in
+        if (!_is_fin_sent && bytes_in_flight() < _window_size && _stream.eof()) {
+            header.fin = true;
+            _is_fin_sent = true;
+        }
+        header.seqno = next_seqno();
         _next_seqno += tcp_segment.length_in_sequence_space();
-        _window_size -= len_to_read;
         _segments_out.push(tcp_segment);
         // record the seqno next to the largest seqno in the segment
         _unacked_segments.insert({_next_seqno, tcp_segment});
@@ -61,14 +70,23 @@ void TCPSender::fill_window() {
             _timer.turn_on(_retransmission_timeout);
             _timer.set_last_expire_time(_current_time);
         }
-        if (!_window_size) {
+        if (!_window_size) {  // zero probing
             break;
         }
-        _ack_received = false;
-    } while ((!_next_seqno                             // no segment sent yet, so need to send syn
-              || _stream.buffer_size()                 // there is data to be sent
-              || (_window_size == 0 && _ack_received)  // zero window probing
-              ));
+    }
+    if (!_is_fin_sent && _stream.eof() && (bytes_in_flight() < _window_size || !bytes_in_flight())) {
+        TCPSegment tcp_segment;
+        tcp_segment.header().seqno = next_seqno();
+        tcp_segment.header().fin = true;
+        _segments_out.push(tcp_segment);
+        _next_seqno++;
+        _unacked_segments.insert({_next_seqno, tcp_segment});
+        _is_fin_sent = true;
+        if (!_timer.is_turn_on()) {
+            _timer.turn_on(_retransmission_timeout);
+            _timer.set_last_expire_time(_current_time);
+        }
+    }
 }
 
 //! \param ackno The remote receiver's ackno (acknowledgment number)
@@ -82,21 +100,19 @@ bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // has been acked
     if (abs_ackno < _abs_ackno)
         return true;
-    // zero window probing
-    if (window_size == 0)
-        _ack_received = true;
     _consecutive_retrans = 0;
     _retransmission_timeout = _initial_retransmission_timeout;
     _timer.set_last_expire_time(_current_time);
     _timer.set_timeout(_retransmission_timeout);
     _abs_ackno = abs_ackno;
-    _window_size = window_size - (_next_seqno - _abs_ackno);
+    _window_size = window_size;
     for (auto it = _unacked_segments.begin(); it != _unacked_segments.end();) {
         if (it->first <= abs_ackno) {
             it = _unacked_segments.erase(it);
         } else
             break;
     }
+    fill_window();
     if (!_unacked_segments.size())
         _timer.turn_off();
     return true;
@@ -124,6 +140,6 @@ void TCPSender::retrainsmit(uint64_t abs_seqno) { _segments_out.push(_unacked_se
 void TCPSender::send_empty_segment() {
     TCPSegment tcp_segment;
     auto &header = tcp_segment.header();
-    header.seqno = wrap(_next_seqno, _isn);
+    header.seqno = next_seqno();
     _segments_out.push(tcp_segment);
 }

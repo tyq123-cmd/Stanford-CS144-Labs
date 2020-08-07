@@ -33,17 +33,16 @@ class TCPSender {
 
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
-    uint64_t _abs_ackno;
+    uint64_t _abs_ackno{0};
 
     Timer _timer;
 
-    size_t _current_time;
-    uint16_t _window_size;
-    size_t _consecutive_retrans;
+    size_t _current_time{0};
+    uint16_t _window_size{1};
+    size_t _consecutive_retrans{0};
     unsigned int _retransmission_timeout;
-    size_t _syn_num = 0;
-    bool _ack_received = false;
-    bool _fin = false;
+    bool _is_syn_sent = false;
+    bool _is_fin_sent = false;
     std::map<uint64_t, TCPSegment> _unacked_segments;
 
   public:

@@ -21,6 +21,13 @@ class TCPConnection {
     //! in case the remote TCPConnection doesn't know we've received its whole stream?
     bool _linger_after_streams_finish{true};
 
+    size_t _current_time{0}, _last_received{0};
+
+    bool _is_initialized{false}, _is_reset_received{false}, _send_rst{false};
+    // for clean shutdown
+    bool _use_rst_seqno{false};
+    WrappingInt32 _rst_seqno{0};
+
   public:
     //! \name "Input" interface for the writer
     //!@{
@@ -31,6 +38,11 @@ class TCPConnection {
     //! \brief Write data to the outbound byte stream, and send it over TCP if possible
     //! \returns the number of bytes from `data` that were actually written.
     size_t write(const std::string &data);
+
+    // fill the _segments_out from _sender
+    void fill_queue();
+
+    void update_seg(TCPSegment &seg);
 
     //! \returns the number of `bytes` that can be written right now.
     size_t remaining_outbound_capacity() const;

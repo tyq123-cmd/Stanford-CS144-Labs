@@ -41,9 +41,11 @@ bool TCPReceiver::segment_received(const TCPSegment &seg) {
     auto seg_abs_seqno = unwrap(header.seqno, isn, checkpoint);
     auto length = seg.length_in_sequence_space();
     auto tcp_abs_seqno = unwrap(_ackno, isn, checkpoint);
+    auto right_end_of_packet = seg_abs_seqno + length - header.syn - header.fin;
     if (header.syn || header.fin ||
-        is_overlap({tcp_abs_seqno, tcp_abs_seqno + window_size()},
-                   {seg_abs_seqno, seg_abs_seqno + length - header.syn - header.fin})) {
+        is_overlap({tcp_abs_seqno, tcp_abs_seqno + window_size()}, {seg_abs_seqno, right_end_of_packet}) ||
+        ((tcp_abs_seqno == right_end_of_packet) && !payload.size())  // zero probing
+    ) {
         auto pre_cnt = _reassembler.stream_out().buffer_size();
         size_t max_len = min(length - header.syn - header.fin, tcp_abs_seqno + window_size() - seg_abs_seqno);
         fin_set = header.fin;
