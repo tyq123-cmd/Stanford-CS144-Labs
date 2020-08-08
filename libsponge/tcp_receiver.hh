@@ -21,10 +21,10 @@ class TCPReceiver {
     size_t _capacity;
     size_t _assembled_size = 0;
 
-    WrappingInt32 isn;
-    bool syn_set = false;
-    bool fin_set = false;
-    uint64_t checkpoint = 0;
+    WrappingInt32 _isn;
+    bool _syn_set = false;
+    bool _fin_set = false;
+    uint64_t _checkpoint = 0;
     WrappingInt32 _ackno;
 
   public:
@@ -32,7 +32,7 @@ class TCPReceiver {
     //!
     //! \param capacity the maximum number of bytes that the receiver will
     //!                 store in its buffers at any give time.
-    TCPReceiver(const size_t capacity) : _reassembler(capacity), _capacity(capacity), isn(0), _ackno(0) {}
+    TCPReceiver(const size_t capacity) : _reassembler(capacity), _capacity(capacity), _isn(0), _ackno(0) {}
 
     //! \name Accessors to provide feedback to the remote TCPSender
     //!@{
