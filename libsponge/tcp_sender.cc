@@ -35,7 +35,7 @@ void TCPSender::fill_window() {
         tcp_segment.header().syn = true;
         _segments_out.push(tcp_segment);
         _next_seqno++;
-        _unacked_segments.insert({_next_seqno, tcp_segment});
+        _unacked_segments.push(tcp_segment);
         _is_syn_sent = true;
         if (!_timer.is_turn_on()) {
             _timer.turn_on(_retransmission_timeout);
@@ -64,7 +64,7 @@ void TCPSender::fill_window() {
         _next_seqno += tcp_segment.length_in_sequence_space();
         _segments_out.push(tcp_segment);
         // record the seqno next to the largest seqno in the segment
-        _unacked_segments.insert({_next_seqno, tcp_segment});
+        _unacked_segments.push(tcp_segment);
 
         if (!_timer.is_turn_on()) {
             _timer.turn_on(_retransmission_timeout);
@@ -80,7 +80,7 @@ void TCPSender::fill_window() {
         tcp_segment.header().fin = true;
         _segments_out.push(tcp_segment);
         _next_seqno++;
-        _unacked_segments.insert({_next_seqno, tcp_segment});
+        _unacked_segments.push(tcp_segment);
         _is_fin_sent = true;
         if (!_timer.is_turn_on()) {
             _timer.turn_on(_retransmission_timeout);
@@ -106,12 +106,14 @@ bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     _timer.set_timeout(_retransmission_timeout);
     _abs_ackno = abs_ackno;
     _window_size = window_size;
-    // TODO: actually we do not need to use a map to _unacked_segments.
-    // Should be able to only keep a variable or something.
-    for (auto it = _unacked_segments.begin(); it != _unacked_segments.end();) {
-        if (it->first <= abs_ackno) {
-            it = _unacked_segments.erase(it);
-        } else
+
+    auto first_unacked_seno = !_unacked_segments.empty() ? unwrap(_unacked_segments.front().header().seqno, _isn, _abs_ackno) : 0;
+    while(!_unacked_segments.empty() && first_unacked_seno < abs_ackno)
+    {
+        _unacked_segments.pop();
+        if (!_unacked_segments.empty())
+            first_unacked_seno = unwrap(_unacked_segments.front().header().seqno, _isn, _abs_ackno);
+        else
             break;
     }
     fill_window();
@@ -124,8 +126,7 @@ bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 void TCPSender::tick(const size_t ms_since_last_tick) {
     _current_time += ms_since_last_tick;
     if (_timer.is_turn_on() && _timer.is_expire(_current_time) && _unacked_segments.size()) {
-        auto earlist_segment = _unacked_segments.begin();
-        retrainsmit(earlist_segment->first);
+        _segments_out.push(_unacked_segments.front());
         if (_window_size) {
             _consecutive_retrans++;
             _retransmission_timeout *= 2;
@@ -136,8 +137,6 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
 }
 
 unsigned int TCPSender::consecutive_retransmissions() const { return _consecutive_retrans; }
-
-void TCPSender::retrainsmit(uint64_t abs_seqno) { _segments_out.push(_unacked_segments[abs_seqno]); }
 
 void TCPSender::send_empty_segment() {
     TCPSegment tcp_segment;
