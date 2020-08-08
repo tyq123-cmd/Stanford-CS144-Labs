@@ -10,13 +10,6 @@ void DUMMY_CODE(Targs &&... /* unused */) {}
 
 using namespace std;
 
-bool is_overlap(const pair<uint64_t, uint64_t> &inter1, const pair<uint64_t, uint64_t> &inter2) {
-    return (inter2.second > inter1.first)     // the data has not been written
-           && (inter1.second > inter2.first)  // the data falls into the window
-           && (max(inter1.second, inter2.second) - min(inter1.first, inter2.first) <=
-               ((inter1.second - inter1.first) + (inter2.second - inter2.first)));  // interval overlap
-}
-
 bool TCPReceiver::segment_received(const TCPSegment &seg) {
     const TCPHeader header = seg.header();
     if (!_syn_set) {
@@ -37,24 +30,40 @@ bool TCPReceiver::segment_received(const TCPSegment &seg) {
         return false;
     }
 
-    auto payload = seg.payload().copy();
-    auto seg_abs_seqno = unwrap(header.seqno, _isn, _checkpoint);
-    auto length = seg.length_in_sequence_space();
-    auto tcp_abs_seqno = unwrap(_ackno, _isn, _checkpoint);
-    auto right_end_of_packet = seg_abs_seqno + length - header.syn - header.fin;
-    if (header.syn || header.fin ||
-        is_overlap({tcp_abs_seqno, tcp_abs_seqno + window_size()}, {seg_abs_seqno, right_end_of_packet}) ||
-        ((tcp_abs_seqno == right_end_of_packet) && !payload.size())  // zero probing
-    ) {
-        auto pre_cnt = _reassembler.stream_out().buffer_size();
-        size_t max_len = min(length - header.syn - header.fin, tcp_abs_seqno + window_size() - seg_abs_seqno);
-        _fin_set = header.fin;
-        _reassembler.push_substring(
-            payload.substr(0, max_len), seg_abs_seqno - static_cast<uint64_t>(!header.syn), header.fin);
-        auto assembled_size = (_reassembler.stream_out().buffer_size() - pre_cnt);
-        _assembled_size += assembled_size;
-        _checkpoint = assembled_size + seg_abs_seqno;
-        _ackno = _ackno + assembled_size + header.syn + header.fin;
+    auto seg_seqno_start = unwrap(header.seqno, _isn, _checkpoint);
+    auto seg_seqno_end = seg_seqno_start + (seg.length_in_sequence_space() ? seg.length_in_sequence_space() - 1 : 0);
+    auto seqno_start = unwrap(_ackno, _isn, _checkpoint);
+    auto seqno_end = seqno_start + (window_size() ? window_size() - 1 : 0);
+    auto payload_end = seg_seqno_end;
+    if (header.syn && header.fin) {
+        payload_end = payload_end > 2 ? payload_end - 2 : 0;
+    } else if (header.syn || header.fin) {
+        payload_end = payload_end > 1 ? payload_end - 1 : 0;
+    }
+    if (seg_seqno_end < seg_seqno_start)
+        seg_seqno_end++;
+    bool fall_into_window =
+        (seg_seqno_start >= seqno_start && seg_seqno_start <= seqno_end)  // seqno fall into the interval
+        || (payload_end >= seqno_start && seg_seqno_end <= seqno_end);    // some new contents
+    if (fall_into_window) {
+        size_t max_len = min(seg.length_in_sequence_space() - header.syn - header.fin,
+                             seqno_start + window_size() - seg_seqno_start);
+        _reassembler.push_substring(seg.payload().copy().substr(0, max_len), seg_seqno_start - 1, header.fin);
+    }
+    _checkpoint = _reassembler.stream_out().bytes_written();
+    if (!_fin_set && header.fin) {
+        _fin_set = true;
+        if (header.syn && seg.length_in_sequence_space() == 2)
+            _reassembler.stream_out().end_input();
+    }
+    if (payload_end <= _checkpoint) {
+        _ackno = wrap(_reassembler.stream_out().bytes_written() +
+                          (_fin_set && (_reassembler.unassembled_bytes() == 0) ? 1 : 0) + 1,
+                      _isn);
+    } else if (seg.length_in_sequence_space()) {
+        _ackno = wrap(_reassembler.stream_out().bytes_written() + 1, _isn);
+    }
+    if (fall_into_window || header.fin || header.syn) {
         return true;
     }
     return false;

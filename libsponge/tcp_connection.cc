@@ -50,17 +50,17 @@ void TCPConnection::segment_received(const TCPSegment &seg) {
     if (!rec_valid && _receiver.ackno().has_value() && !header.rst) {
         send_empty = true;
     }
-    // why the fsm_ack_rst and fsm_ack_rst_relaxed expects exactly opposite behavior, but we need pass both of them?
-    if (((!seg.length_in_sequence_space() && !_receiver.ackno().has_value()) || (!_is_initialized && header.ack)) &&
-        !header.rst) {
-        _send_rst = true;
-        send_empty = true;
-        _use_rst_seqno = true;
-        _rst_seqno = header.ackno;
-        _is_reset_received = true;
-        _sender.stream_in().set_error();
-        inbound_stream().set_error();
-    }
+    // why the fsm_ack_rst and fsm_ack_rst_relaxed expects exactly opposite behavior?
+    // if (((!seg.length_in_sequence_space() && !_receiver.ackno().has_value()) || (!_is_initialized && header.ack)) &&
+    //     !header.rst) {
+    //     _send_rst = true;
+    //     send_empty = true;
+    //     _use_rst_seqno = true;
+    //     _rst_seqno = header.ackno;
+    //     _is_reset_received = true;
+    //     _sender.stream_in().set_error();
+    //     inbound_stream().set_error();
+    // }
 
     if (send_empty)
         _sender.send_empty_segment();
