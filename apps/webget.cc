@@ -1,4 +1,4 @@
-#include "socket.hh"
+#include "tcp_sponge_socket.hh"
 #include "util.hh"
 
 #include <cstdlib>
@@ -19,7 +19,7 @@ void get_URL(const string &host, const string &path) {
 
     cerr << "Function called: get_URL(" << host << ", " << path << ").\n";
 
-    TCPSocket tcp_socket{};
+    CS144TCPSocket tcp_socket{};
     tcp_socket.connect(Address(host, "http"));
     string request = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
     tcp_socket.write(request);
@@ -28,6 +28,7 @@ void get_URL(const string &host, const string &path) {
     while (!tcp_socket.eof()) {
         cout << tcp_socket.read();
     }
+    tcp_socket.wait_until_closed();
 }
 
 int main(int argc, char *argv[]) {
