@@ -16,6 +16,12 @@
 class ByteStream {
   private:
     // Your code here -- add private members as necessary.
+    std::deque<char> _buffer;
+    size_t _capacity;   // maximum value of deque
+    size_t _size;       // used size of deque currently
+    size_t _NumWritten;
+    size_t _NumRead;
+    bool _input_end;    // indicated if the buffer has reach the ending
 
     bool _error{};  //!< Flag indicating that the stream suffered an error.
 
